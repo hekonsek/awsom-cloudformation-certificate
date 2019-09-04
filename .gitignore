@@ -1,0 +1,7 @@
+.idea
+*.iml
+
+vendor
+
+awsom-cloudformation-certificate
+awsom-cloudformation-certificate.zip
