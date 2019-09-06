@@ -17,7 +17,7 @@ Certificate:
 
 ## Usage
 
-The latest release of this resource can be found [here](s3://capsilon-awsom/awsom-cloudformation-certificate-0.0.0.zip).
+The latest release of this resource can be found [here](s3://capsilon-awsom/awsom-cloudformation-certificate-0.1.1.zip).
 I can't promise this hosting site will be available in the future, so I highly recommend to download the zip file and
 host it in your own S3 bucket.
 
@@ -59,7 +59,7 @@ Resources:
       Handler: awsom-cloudformation-certificate 
       Code: 
         S3Bucket: capsilon-awsom
-        S3Key: awsom-cloudformation-certificate-0.0.0.zip
+        S3Key: awsom-cloudformation-certificate-0.1.1.zip
       Role: !Sub ${CloudFormationCertificateResourceRole.Arn}
       Timeout: 360
 

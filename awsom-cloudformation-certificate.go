@@ -44,7 +44,9 @@ func certificateResource(ctx context.Context, event cfn.Event) (physicalResource
 			return
 		}
 		physicalResourceID = *certificateRequestOutput.CertificateArn
-		fmt.Println("Created certificate request.")
+		data = map[string]interface{}{"CertificateArn": *certificateRequestOutput.CertificateArn}
+		fmt.Printf("Generated resource data: %v\n", data)
+		fmt.Printf("Created certificate request with ARN: %s\n", *certificateRequestOutput.CertificateArn)
 
 		err = waitUntilCertificateHasValidationOptions(acmService, *certificateRequestOutput.CertificateArn)
 		if err != nil {
