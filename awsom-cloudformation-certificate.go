@@ -15,7 +15,6 @@ import (
 import "github.com/aws/aws-sdk-go/aws/session"
 
 func certificateResource(ctx context.Context, event cfn.Event) (physicalResourceID string, data map[string]interface{}, e error) {
-	physicalResourceID = "foo"
 	if event.ResourceProperties["Domain"] == nil {
 		e = errors.New("'Domain' property is required")
 		return
@@ -30,7 +29,7 @@ func certificateResource(ctx context.Context, event cfn.Event) (physicalResource
 	if event.RequestType == cfn.RequestCreate {
 		fmt.Println("Received CREATE event.")
 
-		session, err := NewSession()
+		session, err := newSession()
 		if err != nil {
 			e = err
 			return
@@ -46,7 +45,13 @@ func certificateResource(ctx context.Context, event cfn.Event) (physicalResource
 		}
 		physicalResourceID = *certificateRequestOutput.CertificateArn
 		fmt.Println("Created certificate request.")
-		time.Sleep(15 * time.Second)
+
+		err = waitUntilCertificateHasValidationOptions(acmService, *certificateRequestOutput.CertificateArn)
+		if err != nil {
+			e = err
+			return
+		}
+
 		certificate, err := acmService.DescribeCertificate(&acm.DescribeCertificateInput{CertificateArn: certificateRequestOutput.CertificateArn})
 		if err != nil {
 			e = err
@@ -85,10 +90,16 @@ func certificateResource(ctx context.Context, event cfn.Event) (physicalResource
 			e = err
 			return
 		}
+
+		err = waitUntilCertificateIsValidated(acmService, *certificateRequestOutput.CertificateArn)
+		if err != nil {
+			e = err
+			return
+		}
 	} else if event.RequestType == cfn.RequestDelete {
 		fmt.Println("Received DELETE event.")
 
-		session, err := NewSession()
+		session, err := newSession()
 		if err != nil {
 			e = err
 			return
@@ -158,7 +169,7 @@ func main() {
 	lambda.Start(cfn.LambdaWrap(certificateResource))
 }
 
-// NewSession returns session which respects:
+// newSession returns session which respects:
 // - environment variables
 // - `~/aws/.config` and `~/aws/.credentials` files
 //
@@ -166,8 +177,8 @@ func main() {
 //
 //     import "github.com/hekonsek/awsom-session"
 //     ...
-//     err, sess := awsom_session.NewSession()
-func NewSession() (*session.Session, error) {
+//     err, sess := awsom_session.newSession()
+func newSession() (*session.Session, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -176,4 +187,54 @@ func NewSession() (*session.Session, error) {
 	}
 
 	return sess, nil
+}
+
+// waitUntilCertificateHasValidationOptions asserts that certificate request has validation option assigned to it.
+// This is needed because validation option is assigned to request after a small delay.
+func waitUntilCertificateHasValidationOptions(acmService *acm.ACM, certificateArn string) error {
+	fmt.Printf("Ensuring that certificate with ARN %s has validation option assigned to it.\n", certificateArn)
+	for i := 0; i < 10; i++ {
+		hasCertificate, err := certificateHasValidationOptions(acmService, certificateArn)
+		if err != nil {
+			return err
+		}
+		if hasCertificate {
+			return nil
+		}
+		fmt.Printf("Cannot find validation options for certificate with ARN %s. Retrying in 6 seconds...\n", certificateArn)
+		time.Sleep(6 * time.Second)
+	}
+	return errors.New("no validation option for certificate - timed out after a minute")
+}
+
+func certificateHasValidationOptions(acmService *acm.ACM, certificateArn string) (bool, error) {
+	certificate, err := acmService.DescribeCertificate(&acm.DescribeCertificateInput{CertificateArn: aws.String(certificateArn)})
+	if err != nil {
+		return false, err
+	}
+	return len(certificate.Certificate.DomainValidationOptions) > 0, nil
+}
+
+func waitUntilCertificateIsValidated(acmService *acm.ACM, certificateArn string) error {
+	fmt.Printf("Ensuring that certificate with ARN %s is validated.\n", certificateArn)
+	for i := 0; i < 50; i++ {
+		isValidated, err := certificateIsValidated(acmService, certificateArn)
+		if err != nil {
+			return err
+		}
+		if isValidated {
+			return nil
+		}
+		fmt.Printf("Certificate with ARN %s is not validated yet. Retrying in 6 seconds...\n", certificateArn)
+		time.Sleep(6 * time.Second)
+	}
+	return errors.New("no validation option for certificate - timed out after a minute")
+}
+
+func certificateIsValidated(acmService *acm.ACM, certificateArn string) (bool, error) {
+	certificate, err := acmService.DescribeCertificate(&acm.DescribeCertificateInput{CertificateArn: aws.String(certificateArn)})
+	if err != nil {
+		return false, err
+	}
+	return *certificate.Certificate.Status == acm.CertificateStatusIssued, nil
 }
