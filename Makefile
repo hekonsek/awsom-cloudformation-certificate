@@ -1,6 +1,6 @@
 all: build
 
-VERSION=0.1.0
+VERSION=0.2.0
 
 build:
 	GO111MODULE=on go build awsom-cloudformation-certificate.go
