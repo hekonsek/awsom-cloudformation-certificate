@@ -219,7 +219,7 @@ func certificateHasValidationOptions(acmService *acm.ACM, certificateArn string)
 
 func waitUntilCertificateIsValidated(acmService *acm.ACM, certificateArn string) error {
 	fmt.Printf("Ensuring that certificate with ARN %s is validated.\n", certificateArn)
-	for i := 0; i < 150; i++ {
+	for i := 0; i < 130; i++ {
 		isValidated, err := certificateIsValidated(acmService, certificateArn)
 		if err != nil {
 			return err
@@ -230,7 +230,7 @@ func waitUntilCertificateIsValidated(acmService *acm.ACM, certificateArn string)
 		fmt.Printf("Certificate with ARN %s is not validated yet. Retrying in 6 seconds...\n", certificateArn)
 		time.Sleep(6 * time.Second)
 	}
-	return errors.New("certificate validation timed out after 15 minutes")
+	return errors.New("certificate validation timed out after 13 minutes")
 }
 
 func certificateIsValidated(acmService *acm.ACM, certificateArn string) (bool, error) {
