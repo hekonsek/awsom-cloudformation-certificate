@@ -14,6 +14,8 @@ import (
 )
 import "github.com/aws/aws-sdk-go/aws/session"
 
+const validationCnameTtl = 5
+
 func certificateResource(ctx context.Context, event cfn.Event) (physicalResourceID string, data map[string]interface{}, e error) {
 	if event.ResourceProperties["Domain"] == nil {
 		e = errors.New("'Domain' property is required")
@@ -27,141 +29,17 @@ func certificateResource(ctx context.Context, event cfn.Event) (physicalResource
 	hostedZone := event.ResourceProperties["HostedZone"].(string)
 
 	if event.RequestType == cfn.RequestCreate {
-		fmt.Println("Received CREATE event.")
-
-		session, err := newSession()
-		if err != nil {
-			e = err
-			return
-		}
-		acmService := acm.New(session)
-		certificateRequestOutput, err := acmService.RequestCertificate(&acm.RequestCertificateInput{
-			DomainName:       aws.String(domain),
-			ValidationMethod: aws.String("DNS"),
-		})
-		if err != nil {
-			e = err
-			return
-		}
-		physicalResourceID = *certificateRequestOutput.CertificateArn
-		data = map[string]interface{}{"CertificateArn": *certificateRequestOutput.CertificateArn}
-		fmt.Printf("Generated resource data: %v\n", data)
-		fmt.Printf("Created certificate request with ARN: %s\n", *certificateRequestOutput.CertificateArn)
-
-		err = waitUntilCertificateHasValidationOptions(acmService, *certificateRequestOutput.CertificateArn)
-		if err != nil {
-			e = err
-			return
-		}
-
-		certificate, err := acmService.DescribeCertificate(&acm.DescribeCertificateInput{CertificateArn: certificateRequestOutput.CertificateArn})
-		if err != nil {
-			e = err
-			return
-		}
-		recordName := certificate.Certificate.DomainValidationOptions[0].ResourceRecord.Name
-		recordValue := certificate.Certificate.DomainValidationOptions[0].ResourceRecord.Value
-
-		route53Service := route53.New(session)
-
-		hostedZoneOutput, err := route53Service.ListHostedZonesByName(&route53.ListHostedZonesByNameInput{DNSName: aws.String(hostedZone + ".")})
-		if err != nil {
-			e = err
-			return
-		}
-
-		_, err = route53Service.ChangeResourceRecordSets(&route53.ChangeResourceRecordSetsInput{
-			HostedZoneId: hostedZoneOutput.HostedZones[0].Id,
-			ChangeBatch: &route53.ChangeBatch{
-				Changes: []*route53.Change{
-					{
-						Action: aws.String("CREATE"),
-						ResourceRecordSet: &route53.ResourceRecordSet{
-							Name: recordName,
-							Type: aws.String("CNAME"),
-							ResourceRecords: []*route53.ResourceRecord{
-								{Value: recordValue},
-							},
-							TTL: aws.Int64(5),
-						},
-					},
-				},
-			},
-		})
-		if err != nil {
-			e = err
-			return
-		}
-
-		err = waitUntilCertificateIsValidated(acmService, *certificateRequestOutput.CertificateArn)
-		if err != nil {
-			e = err
-			return
-		}
+		physicalResourceID, data, e = createValidatedCertificate(domain, hostedZone)
 	} else if event.RequestType == cfn.RequestDelete {
-		fmt.Println("Received DELETE event.")
-
-		session, err := newSession()
-		if err != nil {
-			e = err
-			return
-		}
-		acmService := acm.New(session)
-		certificates, err := acmService.ListCertificates(&acm.ListCertificatesInput{})
-		if err != nil {
-			e = err
-			return
-		}
-		for _, cert := range certificates.CertificateSummaryList {
-			if *cert.DomainName == domain {
-				certificate, err := acmService.DescribeCertificate(&acm.DescribeCertificateInput{CertificateArn: cert.CertificateArn})
-				if err != nil {
-					e = err
-					return
-				}
-
-				recordName := certificate.Certificate.DomainValidationOptions[0].ResourceRecord.Name
-				recordValue := certificate.Certificate.DomainValidationOptions[0].ResourceRecord.Value
-
-				route53Service := route53.New(session)
-
-				hostedZoneOutput, err := route53Service.ListHostedZonesByName(&route53.ListHostedZonesByNameInput{DNSName: aws.String(hostedZone + ".")})
-				if err != nil {
-					e = err
-					return
-				}
-
-				_, err = route53Service.ChangeResourceRecordSets(&route53.ChangeResourceRecordSetsInput{
-					HostedZoneId: hostedZoneOutput.HostedZones[0].Id,
-					ChangeBatch: &route53.ChangeBatch{
-						Changes: []*route53.Change{
-							{
-								Action: aws.String("DELETE"),
-								ResourceRecordSet: &route53.ResourceRecordSet{
-									Name: recordName,
-									Type: aws.String("CNAME"),
-									ResourceRecords: []*route53.ResourceRecord{
-										{Value: recordValue},
-									},
-									TTL: aws.Int64(60),
-								},
-							},
-						},
-					},
-				})
-				if err != nil {
-					e = err
-					return
-				}
-
-				_, err = acmService.DeleteCertificate(&acm.DeleteCertificateInput{CertificateArn: cert.CertificateArn})
-				if err != nil {
-					fmt.Println(err.Error())
-				}
-			}
-		}
+		e = deleteValidatedCertificate(domain, hostedZone)
 	} else if event.RequestType == cfn.RequestUpdate {
-		fmt.Println("Received UPDATE event. Ignoring.")
+		fmt.Println("Received UPDATE event.")
+		err := deleteValidatedCertificate(domain, hostedZone)
+		if err != nil {
+			e = err
+			return
+		}
+		physicalResourceID, data, e = createValidatedCertificate(domain, hostedZone)
 	}
 
 	return
@@ -189,6 +67,147 @@ func newSession() (*session.Session, error) {
 	}
 
 	return sess, nil
+}
+
+func createValidatedCertificate(domain string, hostedZone string) (physicalResourceID string, data map[string]interface{}, e error) {
+	fmt.Println("Received CREATE event.")
+
+	session, err := newSession()
+	if err != nil {
+		e = err
+		return
+	}
+	acmService := acm.New(session)
+	certificateRequestOutput, err := acmService.RequestCertificate(&acm.RequestCertificateInput{
+		DomainName:       aws.String(domain),
+		ValidationMethod: aws.String("DNS"),
+	})
+	if err != nil {
+		e = err
+		return
+	}
+	physicalResourceID = *certificateRequestOutput.CertificateArn
+	data = map[string]interface{}{"CertificateArn": *certificateRequestOutput.CertificateArn}
+	fmt.Printf("Generated resource data: %v\n", data)
+	fmt.Printf("Created certificate request with ARN: %s\n", *certificateRequestOutput.CertificateArn)
+
+	err = waitUntilCertificateHasValidationOptions(acmService, *certificateRequestOutput.CertificateArn)
+	if err != nil {
+		e = err
+		return
+	}
+
+	certificate, err := acmService.DescribeCertificate(&acm.DescribeCertificateInput{CertificateArn: certificateRequestOutput.CertificateArn})
+	if err != nil {
+		e = err
+		return
+	}
+	recordName := certificate.Certificate.DomainValidationOptions[0].ResourceRecord.Name
+	recordValue := certificate.Certificate.DomainValidationOptions[0].ResourceRecord.Value
+
+	route53Service := route53.New(session)
+
+	hostedZoneOutput, err := route53Service.ListHostedZonesByName(&route53.ListHostedZonesByNameInput{DNSName: aws.String(hostedZone + ".")})
+	if err != nil {
+		e = err
+		return
+	}
+
+	_, err = route53Service.ChangeResourceRecordSets(&route53.ChangeResourceRecordSetsInput{
+		HostedZoneId: hostedZoneOutput.HostedZones[0].Id,
+		ChangeBatch: &route53.ChangeBatch{
+			Changes: []*route53.Change{
+				{
+					Action: aws.String("CREATE"),
+					ResourceRecordSet: &route53.ResourceRecordSet{
+						Name: recordName,
+						Type: aws.String("CNAME"),
+						ResourceRecords: []*route53.ResourceRecord{
+							{Value: recordValue},
+						},
+						TTL: aws.Int64(validationCnameTtl),
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		e = err
+		return
+	}
+
+	err = waitUntilCertificateIsValidated(acmService, *certificateRequestOutput.CertificateArn)
+	if err != nil {
+		e = err
+		return
+	}
+
+	return
+}
+
+func deleteValidatedCertificate(domain string, hostedZone string) (e error) {
+	fmt.Println("Received DELETE event.")
+
+	session, err := newSession()
+	if err != nil {
+		e = err
+		return
+	}
+	acmService := acm.New(session)
+	certificates, err := acmService.ListCertificates(&acm.ListCertificatesInput{})
+	if err != nil {
+		e = err
+		return
+	}
+	for _, cert := range certificates.CertificateSummaryList {
+		if *cert.DomainName == domain {
+			certificate, err := acmService.DescribeCertificate(&acm.DescribeCertificateInput{CertificateArn: cert.CertificateArn})
+			if err != nil {
+				e = err
+				return
+			}
+
+			recordName := certificate.Certificate.DomainValidationOptions[0].ResourceRecord.Name
+			recordValue := certificate.Certificate.DomainValidationOptions[0].ResourceRecord.Value
+
+			route53Service := route53.New(session)
+
+			hostedZoneOutput, err := route53Service.ListHostedZonesByName(&route53.ListHostedZonesByNameInput{DNSName: aws.String(hostedZone + ".")})
+			if err != nil {
+				e = err
+				return
+			}
+
+			_, err = route53Service.ChangeResourceRecordSets(&route53.ChangeResourceRecordSetsInput{
+				HostedZoneId: hostedZoneOutput.HostedZones[0].Id,
+				ChangeBatch: &route53.ChangeBatch{
+					Changes: []*route53.Change{
+						{
+							Action: aws.String("DELETE"),
+							ResourceRecordSet: &route53.ResourceRecordSet{
+								Name: recordName,
+								Type: aws.String("CNAME"),
+								ResourceRecords: []*route53.ResourceRecord{
+									{Value: recordValue},
+								},
+								TTL: aws.Int64(validationCnameTtl),
+							},
+						},
+					},
+				},
+			})
+			if err != nil {
+				e = err
+				return
+			}
+
+			_, err = acmService.DeleteCertificate(&acm.DeleteCertificateInput{CertificateArn: cert.CertificateArn})
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+		}
+	}
+	return
 }
 
 // waitUntilCertificateHasValidationOptions asserts that certificate request has validation option assigned to it.

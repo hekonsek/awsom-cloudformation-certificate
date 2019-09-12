@@ -1,6 +1,6 @@
 all: build
 
-VERSION=0.2.0
+VERSION=0.3.0
 
 build:
 	GO111MODULE=on go build awsom-cloudformation-certificate.go
@@ -8,3 +8,6 @@ build:
 
 deploy: build
 	aws s3 cp awsom-cloudformation-certificate-$(VERSION).zip s3://capsilon-awsom/awsom-cloudformation-certificate-$(VERSION).zip --acl=public-read
+
+version:
+	sed -i "s/${VERSION}/${NEW_VERSION}/g" readme.md Makefile
