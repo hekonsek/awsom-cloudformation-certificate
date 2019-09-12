@@ -1,5 +1,7 @@
 # Validated ACM certificate resource for AWS CloudFormation 
 
+[![Version](https://img.shields.io/badge/Awsom%20Resource%20Certificate-0.3.0-blue.svg)](https://github.com/hekonsek/awsom-resource-certificate/releases)
+
 This is custom CloudFormation resource for validated [ACM](https://aws.amazon.com/certificate-manager) HTTPS/CA certificate. It
 creates ACM request together with DNS CNAME recordset in Route53 for validation purposes. The resource creation process
 will not be completed until certificate is not validated. It means that when you define ACM certificate like this...
