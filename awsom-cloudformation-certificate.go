@@ -48,9 +48,10 @@ func certificateResource(ctx context.Context, event cfn.Event) (physicalResource
 		}
 		for _, cert := range certificates.CertificateSummaryList {
 			if *cert.CertificateArn == event.PhysicalResourceID {
-				if *cert.DomainName != domain {
-					fmt.Printf("Domain %s has been changed to %s. Updating resource.\n", *cert.DomainName, domain)
-					err = deleteValidatedCertificate(domain, hostedZone)
+				existingDomainName := *cert.DomainName
+				if existingDomainName != domain {
+					fmt.Printf("Domain %s has been changed to %s. Updating resource.\n", existingDomainName, domain)
+					err = deleteValidatedCertificate(existingDomainName, hostedZone)
 					if err != nil {
 						e = err
 						return
