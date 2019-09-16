@@ -1,6 +1,6 @@
 # Validated ACM certificate resource for AWS CloudFormation 
 
-[![Version](https://img.shields.io/badge/Awsom%20Resource%20Certificate-0.3.0-blue.svg)](https://github.com/hekonsek/awsom-resource-certificate/releases)
+[![Version](https://img.shields.io/badge/Awsom%20Resource%20Certificate-0.4.0-blue.svg)](https://github.com/hekonsek/awsom-resource-certificate/releases)
 
 This is custom CloudFormation resource for validated [ACM](https://aws.amazon.com/certificate-manager) HTTPS/CA certificate. It
 creates ACM request together with DNS CNAME recordset in Route53 for validation purposes. The resource creation process
@@ -19,7 +19,7 @@ Certificate:
 
 ## Usage
 
-The latest release of this resource can be found [here](s3://capsilon-awsom/awsom-cloudformation-certificate-0.3.0.zip).
+The latest release of this resource can be found [here](s3://capsilon-awsom/awsom-cloudformation-certificate-0.4.0.zip).
 I can't promise this hosting site will be available in the future, so I highly recommend to download the zip file and
 host it in your own S3 bucket.
 
@@ -61,7 +61,7 @@ Resources:
       Handler: awsom-cloudformation-certificate 
       Code: 
         S3Bucket: capsilon-awsom
-        S3Key: awsom-cloudformation-certificate-0.3.0.zip
+        S3Key: awsom-cloudformation-certificate-0.4.0.zip
       Role: !Sub ${CloudFormationCertificateResourceRole.Arn}
       Timeout: 1200
 
