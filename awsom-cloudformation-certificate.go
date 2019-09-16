@@ -34,14 +34,38 @@ func certificateResource(ctx context.Context, event cfn.Event) (physicalResource
 		e = deleteValidatedCertificate(domain, hostedZone)
 	} else if event.RequestType == cfn.RequestUpdate {
 		fmt.Println("Received UPDATE event.")
-		err := deleteValidatedCertificate(domain, hostedZone)
+
+		session, err := newSession()
 		if err != nil {
 			e = err
 			return
 		}
-		physicalResourceID, data, e = createValidatedCertificate(domain, hostedZone)
+		acmService := acm.New(session)
+		certificates, err := acmService.ListCertificates(&acm.ListCertificatesInput{})
+		if err != nil {
+			e = err
+			return
+		}
+		for _, cert := range certificates.CertificateSummaryList {
+			if *cert.CertificateArn == event.PhysicalResourceID {
+				if *cert.DomainName != domain {
+					fmt.Printf("Domain %s has been changed to %s. Updating resource.\n", *cert.DomainName, domain)
+					err = deleteValidatedCertificate(domain, hostedZone)
+					if err != nil {
+						e = err
+						return
+					}
+					physicalResourceID, data, e = createValidatedCertificate(domain, hostedZone)
+					data = map[string]interface{}{"CertificateArn": physicalResourceID}
+					return
+				} else {
+					fmt.Printf("Domain %s for certificate %s has not changed. Skipping update.\n", domain, event.PhysicalResourceID)
+				}
+			}
+		}
+		physicalResourceID = event.PhysicalResourceID
+		e = errors.New(fmt.Sprintf("cannot find certificate with given ARN: %s", physicalResourceID))
 	}
-
 	return
 }
 
